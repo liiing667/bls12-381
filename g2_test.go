@@ -106,7 +106,7 @@ func TestG2Serialization(t *testing.T) {
 		}
 	}
 	for i := 0; i < fuz; i++ {
-		a := g2.rand()
+		a := g2.randAffine()
 		uncompressed := g2.ToBytes(a)
 		b, err := g2.FromBytes(uncompressed)
 		if err != nil {
@@ -453,6 +453,83 @@ func TestG2ClearCofactor(t *testing.T) {
 		g.ClearCofactor(p0)
 		if !g.InCorrectSubgroup(p0) {
 			t.Fatal("cofactor clearing is failed")
+		}
+	}
+}
+
+func TestG2FromBytesSubgroupCheck(t *testing.T) {
+	g := NewG2()
+	for i := 0; i < fuz; i++ {
+		p := g.rand()
+		in := g.ToBytes(p)
+		if _, err := g.FromBytes(in); err == nil {
+			t.Fatal("FromBytes must reject points outside the correct subgroup")
+		}
+		if _, err := g.FromBytes(in[:2*fpByteSize]); err == nil {
+			t.Fatal("FromBytes must reject inputs shorter than 192 bytes")
+		}
+		if _, err := g.FromBytes(append(in, 0)); err == nil {
+			t.Fatal("FromBytes must reject inputs longer than 192 bytes")
+		}
+	}
+	p := g.randAffine()
+	in := g.ToBytes(p)
+	decoded, err := g.FromBytes(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.Equal(p, decoded) {
+		t.Fatal("FromBytes failed for a valid subgroup point")
+	}
+}
+
+func TestG2MultiExpEmptyAndMismatchedInputs(t *testing.T) {
+	g := NewG2()
+	one := g.one()
+	if _, err := g.MultiExp(g.New(), []*PointG2{}, []*Fr{}); err == nil {
+		t.Fatal("MultiExp must reject empty inputs")
+	}
+	if _, err := g.MultiExpBig(g.New(), []*PointG2{}, []*big.Int{}); err == nil {
+		t.Fatal("MultiExpBig must reject empty inputs")
+	}
+	if _, err := g.MultiExp(g.New(), []*PointG2{one}, []*Fr{}); err == nil {
+		t.Fatal("MultiExp must reject mismatched point and scalar lengths")
+	}
+	if _, err := g.MultiExpBig(g.New(), []*PointG2{one}, []*big.Int{}); err == nil {
+		t.Fatal("MultiExpBig must reject mismatched point and scalar lengths")
+	}
+}
+
+func TestG2MultiExpNoInputSideEffects(t *testing.T) {
+	g := NewG2()
+	n := 16
+	bases := make([]*PointG2, n)
+	snapshots := make([]PointG2, n)
+	scalars := make([]*Fr, n)
+	for i := 0; i < n; i++ {
+		bases[i] = g.randCorrect()
+		snapshots[i].Set(bases[i])
+		scalars[i], _ = new(Fr).Rand(rand.Reader)
+	}
+	if _, err := g.MultiExp(g.New(), bases, scalars); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if !g.Equal(bases[i], &snapshots[i]) {
+			t.Fatal("MultiExp must not modify the caller's points")
+		}
+	}
+
+	bigScalars := make([]*big.Int, n)
+	for i := 0; i < n; i++ {
+		bigScalars[i] = scalars[i].ToBig()
+	}
+	if _, err := g.MultiExpBig(g.New(), bases, bigScalars); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if !g.Equal(bases[i], &snapshots[i]) {
+			t.Fatal("MultiExpBig must not modify the caller's points")
 		}
 	}
 }

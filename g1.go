@@ -222,6 +222,9 @@ func (g *G1) FromBytes(in []byte) (*PointG1, error) {
 	if !g.IsOnCurve(p) {
 		return nil, errors.New("point is not on curve")
 	}
+	if !g.InCorrectSubgroup(p) {
+		return nil, errors.New("point is not on correct subgroup")
+	}
 	return p, nil
 }
 
@@ -679,6 +682,13 @@ func (g *G1) MultiExpBig(r *PointG1, points []*PointG1, scalars []*big.Int) (*Po
 	if len(points) != len(scalars) {
 		return nil, errors.New("point and scalar vectors should be in same length")
 	}
+	if len(points) == 0 {
+		return nil, errors.New("can't generate multi exponentiation with empty inputs")
+	}
+
+	// work on copies so the caller's points are never modified
+	points = append([]*PointG1(nil), points...)
+	g.AffineBatch(points)
 
 	c := 3
 	if len(scalars) >= 32 {
@@ -727,7 +737,12 @@ func (g *G1) MultiExp(r *PointG1, points []*PointG1, scalars []*Fr) (*PointG1, e
 	if len(points) != len(scalars) {
 		return nil, errors.New("point and scalar vectors should be in same length")
 	}
+	if len(points) == 0 {
+		return nil, errors.New("can't generate multi exponentiation with empty inputs")
+	}
 
+	// work on copies so the caller's points are never modified
+	points = append([]*PointG1(nil), points...)
 	g.AffineBatch(points)
 
 	c := 3

@@ -456,6 +456,83 @@ func TestG1ClearCofactor(t *testing.T) {
 	}
 }
 
+func TestG1FromBytesSubgroupCheck(t *testing.T) {
+	g := NewG1()
+	for i := 0; i < fuz; i++ {
+		p := g.rand()
+		in := g.ToBytes(p)
+		if _, err := g.FromBytes(in); err == nil {
+			t.Fatal("FromBytes must reject points outside the correct subgroup")
+		}
+		if _, err := g.FromBytes(in[:fpByteSize]); err == nil {
+			t.Fatal("FromBytes must reject inputs shorter than 96 bytes")
+		}
+		if _, err := g.FromBytes(append(in, 0)); err == nil {
+			t.Fatal("FromBytes must reject inputs longer than 96 bytes")
+		}
+	}
+	p := g.randAffine()
+	in := g.ToBytes(p)
+	decoded, err := g.FromBytes(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.Equal(p, decoded) {
+		t.Fatal("FromBytes failed for a valid subgroup point")
+	}
+}
+
+func TestG1MultiExpEmptyAndMismatchedInputs(t *testing.T) {
+	g := NewG1()
+	one := g.one()
+	if _, err := g.MultiExp(g.New(), []*PointG1{}, []*Fr{}); err == nil {
+		t.Fatal("MultiExp must reject empty inputs")
+	}
+	if _, err := g.MultiExpBig(g.New(), []*PointG1{}, []*big.Int{}); err == nil {
+		t.Fatal("MultiExpBig must reject empty inputs")
+	}
+	if _, err := g.MultiExp(g.New(), []*PointG1{one}, []*Fr{}); err == nil {
+		t.Fatal("MultiExp must reject mismatched point and scalar lengths")
+	}
+	if _, err := g.MultiExpBig(g.New(), []*PointG1{one}, []*big.Int{}); err == nil {
+		t.Fatal("MultiExpBig must reject mismatched point and scalar lengths")
+	}
+}
+
+func TestG1MultiExpNoInputSideEffects(t *testing.T) {
+	g := NewG1()
+	n := 16
+	bases := make([]*PointG1, n)
+	snapshots := make([]PointG1, n)
+	scalars := make([]*Fr, n)
+	for i := 0; i < n; i++ {
+		bases[i] = g.randCorrect()
+		snapshots[i].Set(bases[i])
+		scalars[i], _ = new(Fr).Rand(rand.Reader)
+	}
+	if _, err := g.MultiExp(g.New(), bases, scalars); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if !g.Equal(bases[i], &snapshots[i]) {
+			t.Fatal("MultiExp must not modify the caller's points")
+		}
+	}
+
+	bigScalars := make([]*big.Int, n)
+	for i := 0; i < n; i++ {
+		bigScalars[i] = scalars[i].ToBig()
+	}
+	if _, err := g.MultiExpBig(g.New(), bases, bigScalars); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if !g.Equal(bases[i], &snapshots[i]) {
+			t.Fatal("MultiExpBig must not modify the caller's points")
+		}
+	}
+}
+
 func TestG1MapToCurve(t *testing.T) {
 	for i, v := range []struct {
 		u        []byte
